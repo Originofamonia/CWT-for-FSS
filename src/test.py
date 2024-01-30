@@ -10,19 +10,20 @@ import torch.nn.parallel
 import torch.utils.data
 import torch.optim as optim
 from collections import defaultdict
-from .dataset.dataset import get_val_loader
-from .util import AverageMeter, batch_intersectionAndUnionGPU, get_model_dir, get_model_dir_trans
-from .util import find_free_port, setup, cleanup, to_one_hot, intersectionAndUnionGPU
-from .model.pspnet import get_model
-from .model.transformer import MultiHeadAttentionOne
 import torch.distributed as dist
 from tqdm import tqdm
-from .util import load_cfg_from_cfg_file, merge_cfg_from_list
 import argparse
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 import time
 from typing import Tuple
+
+from .dataset.dataset import get_val_loader
+from .util import AverageMeter, batch_intersectionAndUnionGPU, get_model_dir, get_model_dir_trans
+from .util import find_free_port, setup, cleanup, to_one_hot, intersectionAndUnionGPU
+from .model.pspnet import get_model
+from .model.transformer import MultiHeadAttentionOne
+from .util import load_cfg_from_cfg_file, merge_cfg_from_list
 
 
 def parse_args() -> None:

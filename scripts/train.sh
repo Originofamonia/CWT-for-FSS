@@ -20,3 +20,5 @@ python3 -m src.train --config config_files/${DATA}.yaml \
 						    epochs 20 \
 						    test_num 1000 \
 							    | tee ${dirname}/log_${SHOT}.txt
+
+# why batch_size can only be 1?

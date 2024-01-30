@@ -4,12 +4,12 @@ DATA:
   train_split: 0
   test_split: default
   train_list: lists/pascal/train.txt
-  data_root: pascal/
+  data_root: /home/qiyuan/2023fall/PascalVOC/VOCdevkit/VOC2012/
   val_list: lists/pascal/val.txt
   num_classes_tr: 2  # Counting background for training
   num_classes_val: 5
   use_split_coco: False
-  workers: 2
+  workers: 4
   image_size: 473
   padding_label: 255
   mean: [0.485, 0.456, 0.406]
@@ -22,7 +22,7 @@ DATA:
 
 TRAIN:
   ckpt_path: checkpoints/
-  batch_size: 1
+  batch_size: 4
   epochs: 50
   log_freq : 50
   debug: False
@@ -52,7 +52,7 @@ MODEL:
   bottleneck_dim: 512
   backbone_dim: 2048
   heads: 1
-  resume_weights: /pretrained_models/
+  resume_weights: /home/qiyuan/2024spring/CWT-for-FSS/pretrained/model_ckpt/pascal/split=0/model/pspnet_resnet50/best.pth
   model_dir: model_ckpt
 
 EVALUATION:

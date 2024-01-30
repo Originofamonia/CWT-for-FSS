@@ -1,14 +1,15 @@
 import cv2
 import numpy as np
-import src.dataset.transform as transform
-from torch.utils.data import Dataset
-from .utils import make_dataset
-from .classes import get_split_classes, filter_classes
 import torch
 import random
 import argparse
 from typing import List
 from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import Dataset
+
+from .utils import make_dataset
+import src.dataset.transform as transform
+from .classes import get_split_classes, filter_classes
 
 
 def get_train_loader(args: argparse.Namespace) -> torch.utils.data.DataLoader:
