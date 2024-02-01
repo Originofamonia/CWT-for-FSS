@@ -18,12 +18,12 @@ import torch.multiprocessing as mp
 import time
 from typing import Tuple
 
-from .dataset.dataset import get_val_loader
-from .util import AverageMeter, batch_intersectionAndUnionGPU, get_model_dir, get_model_dir_trans
-from .util import find_free_port, setup, cleanup, to_one_hot, intersectionAndUnionGPU
-from .model.pspnet import get_model
-from .model.transformer import MultiHeadAttentionOne
-from .util import load_cfg_from_cfg_file, merge_cfg_from_list
+from dataset.dataset import get_val_loader
+from util import AverageMeter, batch_intersectionAndUnionGPU, get_model_dir, get_model_dir_trans
+from util import find_free_port, setup, cleanup, to_one_hot, intersectionAndUnionGPU
+from model.pspnet import get_model
+from model.transformer import MultiHeadAttentionOne
+from util import load_cfg_from_cfg_file, merge_cfg_from_list
 
 
 def parse_args() -> None:
@@ -131,20 +131,20 @@ def validate_transformer(
 
     # ====== Metrics initialization  ======
     H, W = args.image_size, args.image_size
-    c = model.module.bottleneck_dim
+    c = model.bottleneck_dim
     if args.image_size == 473:
         h = 60
         w = 60
     else:
-        h = model.module.feature_res[0]
-        w = model.module.feature_res[1]
+        h = model.feature_res[0]
+        w = model.feature_res[1]
 
     runtimes = torch.zeros(args.n_runs)
     val_IoUs = np.zeros(args.n_runs)
     val_losses = np.zeros(args.n_runs)
 
     # ====== Perform the runs  ======
-    for run in range(args.n_runs):
+    for run in range(args.n_runs):  # 1
 
         # ====== Initialize the metric dictionaries ======
         loss_meter = AverageMeter()
@@ -154,17 +154,19 @@ def validate_transformer(
         IoU = defaultdict(int)
         runtime = 0
 
-        for e in range(nb_episodes):
+        for e in range(nb_episodes):  # 10
             t0 = time.time()
-            logits_q = torch.zeros(args.batch_size_val, 1, args.num_classes_tr, h, w).to(dist.get_rank())
+            logits_q = torch.zeros(args.batch_size_val, 1, args.num_classes_tr, h, w).to('cuda') # [100,1,2,60,60]
             gt_q = 255 * torch.ones(
                 args.batch_size_val, 1, args.image_size,args.image_size
-            ).long().to(dist.get_rank())
+            ).long().to('cuda')  # [100,1,473,473]
             classes = []  # All classes considered in the tasks
 
             # ====== Process each task separately ======
             # Batch size val is 50 here.
 
+            # for i in range(args.batch_size_val):
+            pbar = tqdm(val_loader)
             for i in range(args.batch_size_val):
                 try:
                     qry_img, q_label, spprt_imgs, s_label, subcls, spprt_oris, qry_oris = iter_loader.next()
@@ -173,11 +175,11 @@ def validate_transformer(
                     qry_img, q_label, spprt_imgs, s_label, subcls, spprt_oris, qry_oris = iter_loader.next()
                 iter_num += 1
 
-                spprt_imgs = spprt_imgs.to(dist.get_rank(), non_blocking=True)
-                s_label = s_label.to(dist.get_rank(), non_blocking=True)
+                spprt_imgs = spprt_imgs.to('cuda', non_blocking=True)  # [1,1,3,473,473]
+                s_label = s_label.to('cuda', non_blocking=True)  # [1,1,473,473]
 
-                q_label = q_label.to(dist.get_rank(), non_blocking=True)
-                qry_img = qry_img.to(dist.get_rank(), non_blocking=True)
+                q_label = q_label.to('cuda', non_blocking=True)  # [1,473,473]
+                qry_img = qry_img.to('cuda', non_blocking=True)  # [1,3,473,473]
 
                 # ====== Phase 1: Train a new binary classifier on support samples. ======
                 binary_classifier = nn.Conv2d(
@@ -197,7 +199,7 @@ def validate_transformer(
                 )
 
                 with torch.no_grad():
-                    f_s = model.module.extract_features(spprt_imgs.squeeze(0))  # [n_task, n_shots, c, h, w]
+                    f_s = model.extract_features(spprt_imgs.squeeze(0))  # [n_task, n_shots, c, h, w]
 
                 for index in range(args.adapt_iter):
                     output_support = binary_classifier(f_s)
@@ -212,7 +214,7 @@ def validate_transformer(
 
                 # ====== Phase 2: Update classifier's weights with old weights and query features. ======
                 with torch.no_grad():
-                    f_q = model.module.extract_features(qry_img)  # [n_task, c, h, w]
+                    f_q = model.extract_features(qry_img)  # [n_task, c, h, w]
                     f_q = F.normalize(f_q, dim=1)
 
                     weights_cls = binary_classifier.weight.data  # [2, c, 1, 1]
@@ -238,6 +240,7 @@ def validate_transformer(
                 logits_q[i] = pred_q.detach()
                 gt_q[i, 0] = q_label
                 classes.append([class_.item() for class_ in subcls])
+                pbar.set_description(f'iter: {i}')
 
             t1 = time.time()
             runtime += t1 - t0

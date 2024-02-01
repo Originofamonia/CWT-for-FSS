@@ -8,7 +8,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import Dataset
 
 from .utils import make_dataset
-import src.dataset.transform as transform
+import dataset.transform as transform
 from .classes import get_split_classes, filter_classes
 
 
@@ -45,13 +45,13 @@ def get_train_loader(args: argparse.Namespace) -> torch.utils.data.DataLoader:
         mode_train=True, transform=train_transform, class_list=class_list, args=args
     )
 
-    world_size = torch.distributed.get_world_size()
+    # world_size = torch.distributed.get_world_size()
     train_sampler = DistributedSampler(train_data) if args.distributed else None
-    batch_size = int(args.batch_size / world_size) if args.distributed else args.batch_size
+    # batch_size = int(args.batch_size / world_size) if args.distributed else args.batch_size
 
     train_loader = torch.utils.data.DataLoader(
         train_data,
-        batch_size=batch_size,
+        batch_size=args.batch_size,
         shuffle=(train_sampler is None),
         num_workers=args.workers,
         pin_memory=True,
@@ -180,7 +180,7 @@ class EpisodicData(Dataset):
 
         support_image_list = []
         support_label_list = []
-        subcls_list = [self.class_list.index(class_chosen) + 1]
+        subcls_list = [self.class_list.index(class_chosen) + 1]  # index of the chosen class in new_classes
 
         # Second, read support images and masks
         for k in range(shot):
@@ -221,5 +221,5 @@ class EpisodicData(Dataset):
         spprt_labels = torch.cat(support_label_list, 0)
 
         return qry_img, target, spprt_imgs, spprt_labels, subcls_list, \
-               [support_image_path_list, support_labels], [image_path, label]
-
+               [support_image_path_list, support_labels], [image_path, label]  # only visualization needs
+    # support_labels, and label need custom_collate fn to deal with for visualization

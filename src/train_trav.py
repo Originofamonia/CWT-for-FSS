@@ -29,18 +29,13 @@ from test import validate_transformer
 from util import load_cfg_from_cfg_file, merge_cfg_from_list
 
 
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+# os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Training classifier weight transformer')
     parser.add_argument('--config', type=str, default=f'config_files/pascal.yaml', help='config file')
     parser.add_argument('--data_root', type=str, 
         default=f'/home/qiyuan/2023fall/PascalVOC/VOCdevkit/VOC2012')
-    # parser.add_argument('--train_split', type=int, default=0)
-    # parser.add_argument('--layers', type=int, default=50)
-    # parser.add_argument('--gpus', type=list, default=[1])
-    # parser.add_argument('--shot', type=int, default=1)
-    # parser.add_argument('--trans_lr', type=float, default=0.001)
     parser.add_argument('--device', type=str, default="cuda:1")
     
     parser.add_argument('--opts', default=None, nargs=argparse.REMAINDER)
@@ -56,6 +51,15 @@ def main_worker(args: argparse.Namespace) -> None:
     print(f"==> Running process rank {args.device}.")
     # setup(args, rank, world_size)
     print(args)
+
+    # if args.manual_seed is not None:
+    #     cudnn.benchmark = False
+    #     cudnn.deterministic = True
+    #     torch.cuda.manual_seed(args.manual_seed + args.device)
+    #     np.random.seed(args.manual_seed + args.device)
+    #     torch.manual_seed(args.manual_seed + args.device)
+    #     torch.cuda.manual_seed_all(args.manual_seed + args.device)
+    #     random.seed(args.manual_seed + args.device)
 
     # ====== Model + Optimizer ======
     model = get_model(args).to('cuda')
@@ -135,16 +139,16 @@ def main_worker(args: argparse.Namespace) -> None:
         if args.distributed:
             train_sampler.set_epoch(epoch)
 
-        # _, _ = do_epoch(
-        #     args=args,
-        #     train_loader=train_loader,
-        #     iter_per_epoch=iter_per_epoch,
-        #     model=model,
-        #     transformer=transformer,
-        #     optimizer_trans=optimizer_transformer,
-        #     epoch=epoch,
-        #     log_iter=log_iter,
-        # )
+        _, _ = do_epoch(
+            args=args,
+            train_loader=train_loader,
+            iter_per_epoch=iter_per_epoch,
+            model=model,
+            transformer=transformer,
+            optimizer_trans=optimizer_transformer,
+            epoch=epoch,
+            log_iter=log_iter,
+        )
 
         val_Iou, val_loss = validate_transformer(
             args=args,
@@ -266,12 +270,12 @@ def do_epoch(
         with torch.no_grad():
             f_s = model.extract_features(spprt_imgs_reshape)  # [n_task, c, h, w]
 
-        for index in range(args.adapt_iter):  # to train the binary classifier
-            output_support = binary_cls(f_s)  # [2, 2, 60, 60]
+        for index in range(args.adapt_iter):
+            output_support = binary_cls(f_s)
             output_support = F.interpolate(
                 output_support, size=s_label.size()[2:],
                 mode='bilinear', align_corners=True
-            )  # [2,2,473,473]
+            )
             s_loss = criterion(output_support, s_label_reshape)
             optimizer.zero_grad()
             s_loss.backward()
@@ -296,25 +300,25 @@ def do_epoch(
             f_q = F.normalize(f_q, dim=1)
 
         # Weights of the classifier.
-        weights_cls = binary_cls.weight.data  # [2,512,1,1]
+        weights_cls = binary_cls.weight.data
 
         weights_cls_reshape = weights_cls.squeeze().unsqueeze(0).expand(
             args.batch_size, 2, weights_cls.shape[1]
-        )  # [n_task, 2, c], [1,2,512]
+        )  # [n_task, 2, c]
 
         # Update the classifier's weights with transformer
-        updated_weights_cls = transformer(weights_cls_reshape, f_q, f_q)  # [n_task, 2, c], [1,2,512]
+        updated_weights_cls = transformer(weights_cls_reshape, f_q, f_q)  # [n_task, 2, c]
 
-        f_q_reshape = f_q.view(args.batch_size, args.bottleneck_dim, -1)  # [n_task, c, hw], [1,512,3600]
+        f_q_reshape = f_q.view(args.batch_size, args.bottleneck_dim, -1)  # [n_task, c, hw]
 
         pred_q = torch.matmul(updated_weights_cls, f_q_reshape).view(
             args.batch_size, 2, f_q.shape[-2], f_q.shape[-1]
-        )  # [n_task, 2, h, w], [1,2,60,60]
+        )  # # [n_task, 2, h, w]
 
         pred_q = F.interpolate(
             pred_q, size=q_label.shape[1:],
             mode='bilinear', align_corners=True
-        )  # [1,2,473,473]
+        )
 
         loss_q = criterion(pred_q, q_label.long())
 
