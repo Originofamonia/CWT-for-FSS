@@ -36,11 +36,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--config', type=str, default=f'config_files/pascal.yaml', help='config file')
     parser.add_argument('--data_root', type=str, 
         default=f'/home/qiyuan/2023fall/PascalVOC/VOCdevkit/VOC2012')
-    # parser.add_argument('--train_split', type=int, default=0)
-    # parser.add_argument('--layers', type=int, default=50)
-    # parser.add_argument('--gpus', type=list, default=[1])
-    # parser.add_argument('--shot', type=int, default=1)
-    # parser.add_argument('--trans_lr', type=float, default=0.001)
     parser.add_argument('--device', type=str, default="cuda:1")
     
     parser.add_argument('--opts', default=None, nargs=argparse.REMAINDER)

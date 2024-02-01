@@ -37,7 +37,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--data_root', type=str, 
         default=f'/home/qiyuan/2023fall/PascalVOC/VOCdevkit/VOC2012')
     parser.add_argument('--device', type=str, default="cuda:1")
-    
     parser.add_argument('--opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
