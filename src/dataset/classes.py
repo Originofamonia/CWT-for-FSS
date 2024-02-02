@@ -105,6 +105,10 @@ classId2className = {'coco': {
                         18: 'sofa',
                         19: 'train',
                         20: 'tv'
+                        },
+                        'trav': {
+                        0: 'obstacle',
+                        255: 'freespace'
                         }
                      }
 
@@ -151,6 +155,29 @@ def get_split_classes(args: argparse.Namespace) -> Dict[str, Any]:
     name = 'pascal'
     class_list = list(range(1, 21))
     vals_lists = [list(range(1, 6)), list(range(6, 11)), list(range(11, 16)), list(range(16, 21))]
+    split_classes[name][-1]['val'] = class_list
+    for i, val_list in enumerate(vals_lists):
+        split_classes[name][i]['val'] = val_list
+        split_classes[name][i]['train'] = list(set(class_list) - set(val_list))
+
+    return split_classes
+
+
+def trav_split_classes(args: argparse.Namespace) -> Dict[str, Any]:
+    """
+    Returns the split of classes for Pascal-5i and Coco-20i
+    inputs:
+        args
+
+    returns :
+         split_classes : Dict.
+                         split_classes['coco'][0]['train'] = training classes in fold 0 of Coco-20i
+    """
+    split_classes = {'trav': defaultdict(dict)}
+    # =============== Pascal ===================
+    name = 'trav'
+    class_list = [0,1]
+    vals_lists = [[0],[1]]
     split_classes[name][-1]['val'] = class_list
     for i, val_list in enumerate(vals_lists):
         split_classes[name][i]['val'] = val_list

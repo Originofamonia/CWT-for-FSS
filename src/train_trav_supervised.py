@@ -1,17 +1,21 @@
+"""
+Fully-supervised training
+"""
+
 import os
 import sys
 import random
 import numpy as np
 import torch
-import torch.backends.cudnn as cudnn
+# import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.parallel
 import torch.utils.data
 import torch.optim as optim
-from collections import defaultdict
-from typing import Dict
-from torch import Tensor
+# from collections import defaultdict
+# from typing import Dict
+# from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -22,21 +26,18 @@ from tqdm import tqdm
 from model.pspnet import get_model
 from model.transformer import MultiHeadAttentionOne
 from optimizer import get_optimizer, get_scheduler
-from dataset.dataset import get_val_loader, get_train_loader
+from dataset.dataset import trav_train_loader, trav_val_loader
 from util import intersectionAndUnionGPU, get_model_dir, AverageMeter, get_model_dir_trans
 from util import setup, cleanup, to_one_hot, batch_intersectionAndUnionGPU, find_free_port
 from test import validate_transformer
 from util import load_cfg_from_cfg_file, merge_cfg_from_list
 
-
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Training classifier weight transformer')
-    parser.add_argument('--config', type=str, default=f'config_files/pascal.yaml', help='config file')
-    parser.add_argument('--data_root', type=str, 
-        default=f'/home/qiyuan/2023fall/PascalVOC/VOCdevkit/VOC2012')
-    parser.add_argument('--device', type=str, default="cuda:1")
+    parser.add_argument('--config', type=str, default=f'config_files/trav.yaml', help='config file')
     parser.add_argument('--opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     assert args.config is not None
@@ -121,8 +122,8 @@ def main_worker(args: argparse.Namespace) -> None:
     trans_save_dir = get_model_dir_trans(args)
 
     # ====== Data  ======
-    train_loader, train_sampler = get_train_loader(args)
-    episodic_val_loader, _ = get_val_loader(args)
+    train_loader, train_sampler = trav_train_loader(args)
+    episodic_val_loader, _ = trav_val_loader(args)
 
     # ====== Metrics initialization ======
     max_val_mIoU = 0.
@@ -261,6 +262,8 @@ def do_epoch(
         back_pix = np.where(s_label_arr == 0)
         target_pix = np.where(s_label_arr == 1)
 
+        if len(back_pix[0]) == 0 or len(target_pix[0]) == 0:
+            continue  # skip bad support set
         criterion = nn.CrossEntropyLoss(
             weight=torch.tensor([1.0, len(back_pix[0]) / len(target_pix[0])]).cuda(),
             ignore_index=255
