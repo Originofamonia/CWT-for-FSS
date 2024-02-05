@@ -23,7 +23,7 @@ DATA:
 TRAIN:
   ckpt_path: checkpoints/
   batch_size: 1
-  epochs: 1
+  epochs: 50
   log_freq : 50
   debug: False
   save_models: False

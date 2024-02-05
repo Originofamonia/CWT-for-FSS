@@ -23,13 +23,13 @@ import argparse
 from typing import Tuple
 from tqdm import tqdm
 
-from model.pspnet import get_model
+from model.pspnet import get_model_supervised
 from model.transformer import MultiHeadAttentionOne
 from optimizer import get_optimizer, get_scheduler
 from dataset.dataset import trav_train_loader, trav_val_loader
 from util import intersectionAndUnionGPU, get_model_dir, AverageMeter, get_model_dir_trans
 from util import setup, cleanup, to_one_hot, batch_intersectionAndUnionGPU, find_free_port
-from test import validate_transformer
+from test import validate_supervised
 from util import load_cfg_from_cfg_file, merge_cfg_from_list
 
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
@@ -52,7 +52,7 @@ def main_worker(args: argparse.Namespace) -> None:
     # setup(args, rank, world_size)
     print(args)
 
-    # if args.manual_seed is not None:
+    # if args.manual_seed:
     #     cudnn.benchmark = False
     #     cudnn.deterministic = True
     #     torch.cuda.manual_seed(args.manual_seed + args.device)
@@ -62,7 +62,7 @@ def main_worker(args: argparse.Namespace) -> None:
     #     random.seed(args.manual_seed + args.device)
 
     # ====== Model + Optimizer ======
-    model = get_model(args).to('cuda')
+    model = get_model_supervised(args).to('cuda')
 
     if args.resume_weights:
         if os.path.isfile(args.resume_weights):
@@ -87,35 +87,33 @@ def main_worker(args: argparse.Namespace) -> None:
             print("=> no weight found at '{}'".format(args.resume_weights))
 
         # Fix the backbone layers
-        for param in model.layer0.parameters():
-            param.requires_grad = False
-        for param in model.layer1.parameters():
-            param.requires_grad = False
-        for param in model.layer2.parameters():
-            param.requires_grad = False
-        for param in model.layer3.parameters():
-            param.requires_grad = False
-        for param in model.layer4.parameters():
-            param.requires_grad = False
-        for param in model.ppm.parameters():
-            param.requires_grad = False
-        for param in model.bottleneck.parameters():
-            param.requires_grad = False
+        # for param in model.layer0.parameters():
+        #     param.requires_grad = False
+        # for param in model.layer1.parameters():
+        #     param.requires_grad = False
+        # for param in model.layer2.parameters():
+        #     param.requires_grad = False
+        # for param in model.layer3.parameters():
+        #     param.requires_grad = False
+        # for param in model.layer4.parameters():
+        #     param.requires_grad = False
+        # for param in model.bottleneck.parameters():
+        #     param.requires_grad = False
 
     # model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     # model = DDP(model, device_ids=[rank])
 
     # ====== Transformer ======
-    trans_dim = args.bottleneck_dim
+    # trans_dim = args.bottleneck_dim
 
-    transformer = MultiHeadAttentionOne(
-        args.heads, trans_dim, trans_dim, trans_dim, dropout=0.5
-    ).to('cuda')
+    # transformer = MultiHeadAttentionOne(
+    #     args.heads, trans_dim, trans_dim, trans_dim, dropout=0.5
+    # ).to('cuda')
 
-    optimizer_transformer = get_optimizer(
-        args,
-        [dict(params=transformer.parameters(), lr=args.trans_lr * args.scale_lr)]
-    )
+    # optimizer_transformer = get_optimizer(
+    #     args,
+    #     [dict(params=transformer.parameters(), lr=args.trans_lr * args.scale_lr)]
+    # )
     # transformer = nn.SyncBatchNorm.convert_sync_batchnorm(transformer)
     # transformer = DDP(transformer, device_ids=[rank])
 
@@ -144,17 +142,16 @@ def main_worker(args: argparse.Namespace) -> None:
             train_loader=train_loader,
             iter_per_epoch=iter_per_epoch,
             model=model,
-            transformer=transformer,
-            optimizer_trans=optimizer_transformer,
+            
             epoch=epoch,
             log_iter=log_iter,
         )
 
-        val_Iou, val_loss = validate_transformer(
+        val_Iou, val_loss = validate_supervised(
             args=args,
             val_loader=episodic_val_loader,
             model=model,
-            transformer=transformer
+            # transformer=transformer
         )
 
         # if args.distributed:
@@ -170,30 +167,30 @@ def main_worker(args: argparse.Namespace) -> None:
                 os.makedirs(trans_save_dir, exist_ok=True)
                 filename_transformer = os.path.join(trans_save_dir, f'best.pth')
 
-                if args.save_models:
-                    print('Saving checkpoint to: ' + filename_transformer)
+                # if args.save_models:
+                #     print('Saving checkpoint to: ' + filename_transformer)
 
-                    torch.save(
-                        {
-                            'epoch': epoch,
-                            'state_dict': transformer.state_dict(),
-                            'optimizer': optimizer_transformer.state_dict()
-                        },
-                        filename_transformer
-                    )
+                #     torch.save(
+                #         {
+                #             'epoch': epoch,
+                #             'state_dict': transformer.state_dict(),
+                #             'optimizer': optimizer_transformer.state_dict()
+                #         },
+                #         filename_transformer
+                #     )
 
             print("=> Max_mIoU = {:.3f}".format(max_val_mIoU))
 
-    if args.save_models and main_process(args):
-        filename_transformer = os.path.join(trans_save_dir, 'final.pth')
-        torch.save(
-            {
-                'epoch': args.epochs,
-                'state_dict': transformer.state_dict(),
-                'optimizer': optimizer_transformer.state_dict()
-             },
-            filename_transformer
-        )
+    # if args.save_models and main_process(args):
+    #     filename_transformer = os.path.join(trans_save_dir, 'final.pth')
+    #     torch.save(
+    #         {
+    #             'epoch': args.epochs,
+    #             # 'state_dict': transformer.state_dict(),
+    #             # 'optimizer': optimizer_transformer.state_dict()
+    #          },
+    #         filename_transformer
+    #     )
 
     # cleanup()
 
@@ -213,12 +210,11 @@ def do_epoch(
         args: argparse.Namespace,
         train_loader: torch.utils.data.DataLoader,
         model,
-        transformer,
-        optimizer_trans: torch.optim.Optimizer,
+        # optimizer_trans: torch.optim.Optimizer,
         epoch: int,
         iter_per_epoch: int,
         log_iter: int
-) -> Tuple[torch.tensor, torch.tensor]:
+    ) -> Tuple[torch.tensor, torch.tensor]:
 
     loss_meter = AverageMeter()
     train_losses = torch.zeros(log_iter).to('cuda')
@@ -227,7 +223,7 @@ def do_epoch(
     # iterable_train_loader = iter(train_loader)
 
     model.train()
-    transformer.train()
+    # transformer.train()
     pbar = tqdm(train_loader)
     for i, batch in enumerate(pbar):
         qry_img, q_label, spprt_imgs, s_label, subcls, _, _ = batch
@@ -255,7 +251,7 @@ def do_epoch(
             args.bottleneck_dim, args.num_classes_tr, kernel_size=1, bias=False
         ).cuda()
 
-        optimizer = optim.SGD(binary_cls.parameters(), lr=args.cls_lr)
+        optimizer = optim.SGD(model.parameters(), lr=args.cls_lr)
 
         # Dynamic class weights
         s_label_arr = s_label.cpu().numpy().copy()  # [n_task, n_shots, img_size, img_size]
@@ -268,25 +264,10 @@ def do_epoch(
             weight=torch.tensor([1.0, len(back_pix[0]) / len(target_pix[0])]).cuda(),
             ignore_index=255
         )
+        optimizer.zero_grad()
 
-        with torch.no_grad():
-            f_s = model.extract_features(spprt_imgs_reshape)  # [n_task, c, h, w]
+        logits = model(qry_img)  # [n_task, c, h, w]
 
-        for index in range(args.adapt_iter):
-            output_support = binary_cls(f_s)
-            output_support = F.interpolate(
-                output_support, size=s_label.size()[2:],
-                mode='bilinear', align_corners=True
-            )
-            s_loss = criterion(output_support, s_label_reshape)
-            optimizer.zero_grad()
-            s_loss.backward()
-            optimizer.step()
-
-        # ====== Phase 2: Train the transformer to update the classifier's weights ======
-        # Inputs of the transformer: weights of classifier trained on support sets, features of the query sample.
-
-        # Dynamic class weights used for query image only during training
         q_label_arr = q_label.cpu().numpy().copy()  # [n_task, img_size, img_size]
         q_back_pix = np.where(q_label_arr == 0)
         q_target_pix = np.where(q_label_arr == 1)
@@ -296,41 +277,14 @@ def do_epoch(
             ignore_index=255
         )
 
-        model.eval()
-        with torch.no_grad():
-            f_q = model.extract_features(qry_img)  # [n_task, c, h, w]
-            f_q = F.normalize(f_q, dim=1)
+        loss_q = criterion(logits, q_label.long())
 
-        # Weights of the classifier.
-        weights_cls = binary_cls.weight.data
-
-        weights_cls_reshape = weights_cls.squeeze().unsqueeze(0).expand(
-            args.batch_size, 2, weights_cls.shape[1]
-        )  # [n_task, 2, c]
-
-        # Update the classifier's weights with transformer
-        updated_weights_cls = transformer(weights_cls_reshape, f_q, f_q)  # [n_task, 2, c]
-
-        f_q_reshape = f_q.view(args.batch_size, args.bottleneck_dim, -1)  # [n_task, c, hw]
-
-        pred_q = torch.matmul(updated_weights_cls, f_q_reshape).view(
-            args.batch_size, 2, f_q.shape[-2], f_q.shape[-1]
-        )  # # [n_task, 2, h, w]
-
-        pred_q = F.interpolate(
-            pred_q, size=q_label.shape[1:],
-            mode='bilinear', align_corners=True
-        )
-
-        loss_q = criterion(pred_q, q_label.long())
-
-        optimizer_trans.zero_grad()
         loss_q.backward()
-        optimizer_trans.step()
+        optimizer.step()
 
         # Print loss and mIoU
         intersection, union, target = intersectionAndUnionGPU(
-            pred_q.argmax(1), q_label, args.num_classes_tr, 255
+            logits.argmax(1), q_label, args.num_classes_tr, 255
         )
 
         if args.distributed:

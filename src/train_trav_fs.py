@@ -24,7 +24,7 @@ import argparse
 from typing import Tuple
 from tqdm import tqdm
 
-from model.pspnet import get_model
+from model.pspnet import get_model_fs
 from model.transformer import MultiHeadAttentionOne
 from optimizer import get_optimizer, get_scheduler
 from dataset.dataset import trav_train_loader, trav_val_loader
@@ -63,7 +63,7 @@ def main_worker(args: argparse.Namespace) -> None:
     #     random.seed(args.manual_seed + args.device)
 
     # ====== Model + Optimizer ======
-    model = get_model(args).to('cuda')
+    model = get_model_fs(args).to('cuda')
 
     if args.resume_weights:
         if os.path.isfile(args.resume_weights):
@@ -140,16 +140,16 @@ def main_worker(args: argparse.Namespace) -> None:
         if args.distributed:
             train_sampler.set_epoch(epoch)
 
-        _, _ = do_epoch(
-            args=args,
-            train_loader=train_loader,
-            iter_per_epoch=iter_per_epoch,
-            model=model,
-            transformer=transformer,
-            optimizer_trans=optimizer_transformer,
-            epoch=epoch,
-            log_iter=log_iter,
-        )
+        # _, _ = do_epoch(
+        #     args=args,
+        #     train_loader=train_loader,
+        #     iter_per_epoch=iter_per_epoch,
+        #     model=model,
+        #     transformer=transformer,
+        #     optimizer_trans=optimizer_transformer,
+        #     epoch=epoch,
+        #     log_iter=log_iter,
+        # )
 
         val_Iou, val_loss = validate_transformer(
             args=args,

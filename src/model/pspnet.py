@@ -5,8 +5,11 @@ from .resnet import resnet50, resnet101
 from .vgg import vgg16_bn
 
 
-def get_model(args) -> nn.Module:
+def get_model_fs(args) -> nn.Module:
     return PSPNet(args, zoom_factor=8, use_ppm=True)
+
+def get_model_supervised(args) -> nn.Module:
+    return PSPNet(args, zoom_factor=8, use_ppm=False)
 
 
 class PPM(nn.Module):
@@ -63,6 +66,7 @@ def get_vgg16_layer(model):
 class PSPNet(nn.Module):
     def __init__(self, args, zoom_factor, use_ppm):
         super(PSPNet, self).__init__()
+        self.args = args
         # assert args.layers in [50, 101, 152]
         assert 2048 % len(args.bins) == 0
         assert args.num_classes_tr > 1
@@ -111,12 +115,14 @@ class PSPNet(nn.Module):
         if use_ppm:
             self.ppm = PPM(fea_dim, int(fea_dim/len(args.bins)), args.bins)
             fea_dim *= 2
-            self.bottleneck = nn.Sequential(
-                nn.Conv2d(fea_dim, self.bottleneck_dim, kernel_size=3, padding=1, bias=False),
-                nn.BatchNorm2d(self.bottleneck_dim),
-                nn.ReLU(inplace=True),
-                nn.Dropout2d(p=args.dropout)
-            )
+        else:
+            self.ppm = None
+        self.bottleneck = nn.Sequential(
+            nn.Conv2d(fea_dim, self.bottleneck_dim, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(self.bottleneck_dim),
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(p=args.dropout)
+        )
         self.classifier = nn.Conv2d(self.bottleneck_dim, args.num_classes_tr, kernel_size=1, bias=False)
 
     def freeze_bn(self):
@@ -143,7 +149,8 @@ class PSPNet(nn.Module):
             x = torch.cat([x_2, x_3], dim=1)
         else:
             x = self.layer4(x_3)
-        x = self.ppm(x)
+        if self.ppm:
+            x = self.ppm(x)
         x = self.bottleneck(x)
         return x
 

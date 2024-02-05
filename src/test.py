@@ -21,7 +21,7 @@ from typing import Tuple
 from dataset.dataset import get_val_loader
 from util import AverageMeter, batch_intersectionAndUnionGPU, get_model_dir, get_model_dir_trans
 from util import find_free_port, setup, cleanup, to_one_hot, intersectionAndUnionGPU
-from model.pspnet import get_model
+from model.pspnet import get_model_fs
 from model.transformer import MultiHeadAttentionOne
 from util import load_cfg_from_cfg_file, merge_cfg_from_list
 
@@ -53,7 +53,7 @@ def main_worker(rank: int, world_size: int, args: argparse.Namespace) -> None:
         random.seed(args.manual_seed + rank)
 
     # ====== Model  ======
-    model = get_model(args).to(rank)
+    model = get_model_fs(args).to(rank)
     model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model = DDP(model, device_ids=[rank])
 
@@ -248,17 +248,191 @@ def validate_transformer(
             logits = F.interpolate(
                 logits_q.squeeze(1), size=(H, W),
                 mode='bilinear', align_corners=True
-            ).detach()
+            ).detach()  # logits: [100,2,473,473]
 
             intersection, union, _ = batch_intersectionAndUnionGPU(
                 logits.unsqueeze(1), gt_q, 2
-            )
+            )  # gt_q: [100,1,473,473]
 
             intersection, union = intersection.cpu(), union.cpu()
 
             # ====== Log metrics ======
             criterion_standard = nn.CrossEntropyLoss(ignore_index=255)
             loss = criterion_standard(logits, gt_q.squeeze(1))
+            loss_meter.update(loss.item())
+            for i, task_classes in enumerate(classes):
+                for j, class_ in enumerate(task_classes):
+                    cls_intersection[class_] += intersection[i, 0, j + 1]  # Do not count background
+                    cls_union[class_] += union[i, 0, j + 1]
+
+            for class_ in cls_union:
+                IoU[class_] = cls_intersection[class_] / (cls_union[class_] + 1e-10)
+
+            if (iter_num % 200 == 0):
+                mIoU = np.mean([IoU[i] for i in IoU])
+                print('Test: [{}/{}] '
+                      'mIoU {:.4f} '
+                      'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f}) '.format(
+                    iter_num, args.test_num, mIoU, loss_meter=loss_meter
+                ))
+
+        runtimes[run] = runtime
+        mIoU = np.mean(list(IoU.values()))
+        print('mIoU---Val result: mIoU {:.4f}.'.format(mIoU))
+        for class_ in cls_union:
+            print("Class {} : {:.4f}".format(class_, IoU[class_]))
+
+        val_IoUs[run] = mIoU
+        val_losses[run] = loss_meter.avg
+
+    print('Average mIoU over {} runs --- {:.4f}.'.format(args.n_runs, val_IoUs.mean()))
+    print('Average runtime / run --- {:.4f}.'.format(runtimes.mean()))
+
+    return val_IoUs.mean(), val_losses.mean()
+
+
+def validate_supervised(
+        args: argparse.Namespace,
+        val_loader: torch.utils.data.DataLoader,
+        model: DDP,
+        # transformer: DDP
+    ) -> Tuple[torch.tensor, torch.tensor]:
+    """
+    validate fully-supervised PSPNet on trav dataset. 
+    """
+    print('==> Start testing')
+
+    model.eval()
+    # transformer.eval()
+    nb_episodes = int(args.test_num / args.batch_size_val)
+
+    # ====== Metrics initialization  ======
+    H, W = args.image_size, args.image_size
+    c = model.bottleneck_dim
+    if args.image_size == 473:
+        h = args.image_size
+        w = args.image_size
+    else:
+        h = model.feature_res[0]
+        w = model.feature_res[1]
+
+    runtimes = torch.zeros(args.n_runs)
+    val_IoUs = np.zeros(args.n_runs)
+    val_losses = np.zeros(args.n_runs)
+
+    # ====== Perform the runs  ======
+    for run in range(args.n_runs):  # 1
+
+        # ====== Initialize the metric dictionaries ======
+        loss_meter = AverageMeter()
+        iter_num = 0
+        cls_intersection = defaultdict(int)  # Default value is 0
+        cls_union = defaultdict(int)
+        IoU = defaultdict(int)
+        runtime = 0
+
+        for e in range(nb_episodes):  # 10
+            t0 = time.time()
+            logits_q = torch.zeros(args.batch_size_val, 1, args.num_classes_tr, h, w).to('cuda') # [100,1,2,60,60]
+            gt_q = 255 * torch.ones(
+                args.batch_size_val, 1, args.image_size,args.image_size
+            ).long().to('cuda')  # [100,1,473,473]
+            classes = []  # All classes considered in the tasks
+
+            # ====== Process each task separately ======
+            # Batch size val is 50 here.
+
+            # for i in range(args.batch_size_val):
+            pbar = tqdm(val_loader)
+            for i in range(args.batch_size_val):
+                try:
+                    qry_img, q_label, spprt_imgs, s_label, subcls, spprt_oris, qry_oris = iter_loader.next()
+                except:
+                    iter_loader = iter(val_loader)
+                    qry_img, q_label, spprt_imgs, s_label, subcls, spprt_oris, qry_oris = iter_loader.next()
+                iter_num += 1
+
+                spprt_imgs = spprt_imgs.to('cuda', non_blocking=True)  # [1,1,3,473,473]
+                s_label = s_label.to('cuda', non_blocking=True)  # [1,1,473,473]
+
+                q_label = q_label.to('cuda', non_blocking=True)  # [1,473,473]
+                qry_img = qry_img.to('cuda', non_blocking=True)  # [1,3,473,473]
+
+                # ====== Phase 1: Train a new binary classifier on support samples. ======
+                # binary_classifier = nn.Conv2d(
+                #     args.bottleneck_dim, args.num_classes_tr, kernel_size=1, bias=False
+                # ).cuda()
+
+                # optimizer = optim.SGD(binary_classifier.parameters(), lr=args.cls_lr)
+
+                # # Dynamic class weights
+                # s_label_arr = s_label.cpu().numpy().copy()  # [n_task, n_shots, img_size, img_size]
+                # back_pix = np.where(s_label_arr == 0)
+                # target_pix = np.where(s_label_arr == 1)
+
+                # criterion = nn.CrossEntropyLoss(
+                #     weight=torch.tensor([1.0, len(back_pix[0]) / len(target_pix[0])]).cuda(),
+                #     ignore_index=255
+                # )
+
+                # with torch.no_grad():
+                #     logits = model(qry_img)  # [n_task, n_shots, c, h, w]
+
+                # for index in range(args.adapt_iter):
+                #     output_support = binary_classifier(f_s)
+                #     output_support = F.interpolate(
+                #         output_support, size=s_label.size()[2:],
+                #         mode='bilinear', align_corners=True
+                #     )
+                #     s_loss = criterion(output_support, s_label.squeeze(0))
+                #     optimizer.zero_grad()
+                #     s_loss.backward()
+                #     optimizer.step()
+
+                # ====== Phase 2: Update classifier's weights with old weights and query features. ======
+                with torch.no_grad():
+                    pred_q = model(qry_img)  # [n_task, c, h, w]
+                #     f_q = F.normalize(f_q, dim=1)
+
+                #     weights_cls = binary_classifier.weight.data  # [2, c, 1, 1]
+
+                #     weights_cls_reshape = weights_cls.squeeze().unsqueeze(0).expand(
+                #         f_q.shape[0], 2, 512
+                #     )  # [1, 2, c]
+
+                #     updated_weights_cls = transformer(weights_cls_reshape, f_q, f_q)  # [1, 2, c]
+
+                #     # Build a temporary new classifier for prediction
+                #     Pseudo_cls = nn.Conv2d(
+                #         args.bottleneck_dim, args.num_classes_tr, kernel_size=1, bias=False
+                #     ).cuda()
+
+                #     # Initialize the weights with updated ones
+                #     Pseudo_cls.weight.data = torch.as_tensor(
+                #         updated_weights_cls.squeeze(0).unsqueeze(2).unsqueeze(3)
+                #     )
+
+                #     pred_q = Pseudo_cls(f_q)
+
+                logits_q[i] = pred_q.detach()
+                gt_q[i, 0] = q_label
+                classes.append([class_.item() for class_ in subcls])
+                pbar.set_description(f'iter: {i}')
+
+            t1 = time.time()
+            runtime += t1 - t0
+
+            logits = logits_q.detach()
+
+            intersection, union, _ = batch_intersectionAndUnionGPU(
+                logits, gt_q, 2
+            )
+
+            intersection, union = intersection.cpu(), union.cpu()
+
+            # ====== Log metrics ======
+            criterion_standard = nn.CrossEntropyLoss(ignore_index=255)
+            loss = criterion_standard(logits.squeeze(1), gt_q.squeeze(1))
             loss_meter.update(loss.item())
             for i, task_classes in enumerate(classes):
                 for j, class_ in enumerate(task_classes):
