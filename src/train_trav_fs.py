@@ -29,7 +29,7 @@ from model.transformer import MultiHeadAttentionOne
 from optimizer import get_optimizer, get_scheduler
 from dataset.dataset import trav_train_loader, trav_val_loader
 from util import intersectionAndUnionGPU, get_model_dir, AverageMeter, get_model_dir_trans
-from util import setup, cleanup, to_one_hot, batch_intersectionAndUnionGPU, find_free_port
+# from util import setup, cleanup, to_one_hot, batch_intersectionAndUnionGPU, find_free_port
 from test import validate_transformer
 from util import load_cfg_from_cfg_file, merge_cfg_from_list
 
@@ -140,16 +140,16 @@ def main_worker(args: argparse.Namespace) -> None:
         if args.distributed:
             train_sampler.set_epoch(epoch)
 
-        # _, _ = do_epoch(
-        #     args=args,
-        #     train_loader=train_loader,
-        #     iter_per_epoch=iter_per_epoch,
-        #     model=model,
-        #     transformer=transformer,
-        #     optimizer_trans=optimizer_transformer,
-        #     epoch=epoch,
-        #     log_iter=log_iter,
-        # )
+        _, _ = do_epoch(
+            args=args,
+            train_loader=train_loader,
+            iter_per_epoch=iter_per_epoch,
+            model=model,
+            transformer=transformer,
+            optimizer_trans=optimizer_transformer,
+            epoch=epoch,
+            log_iter=log_iter,
+        )
 
         val_Iou, val_loss = validate_transformer(
             args=args,

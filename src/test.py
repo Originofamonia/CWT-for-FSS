@@ -127,11 +127,11 @@ def validate_transformer(
 
     model.eval()
     transformer.eval()
-    nb_episodes = int(args.test_num / args.batch_size_val)
+    n_episodes = int(args.test_num / args.batch_size_val)
 
     # ====== Metrics initialization  ======
     H, W = args.image_size, args.image_size
-    c = model.bottleneck_dim
+    # c = model.bottleneck_dim
     if args.image_size == 473:
         h = 60
         w = 60
@@ -154,25 +154,23 @@ def validate_transformer(
         IoU = defaultdict(int)
         runtime = 0
 
-        for e in range(nb_episodes):  # 10
+        for e in range(n_episodes):
             t0 = time.time()
-            logits_q = torch.zeros(args.batch_size_val, 1, args.num_classes_tr, h, w).to('cuda') # [100,1,2,60,60]
+            logits_q = torch.zeros(args.test_num, 1, args.num_classes_tr, h, w).to('cuda') # [100,1,2,60,60]
             gt_q = 255 * torch.ones(
-                args.batch_size_val, 1, args.image_size,args.image_size
+                args.test_num, 1, args.image_size,args.image_size
             ).long().to('cuda')  # [100,1,473,473]
             classes = []  # All classes considered in the tasks
 
             # ====== Process each task separately ======
             # Batch size val is 50 here.
 
-            # for i in range(args.batch_size_val):
             pbar = tqdm(val_loader)
-            for i in range(args.batch_size_val):
-                try:
-                    qry_img, q_label, spprt_imgs, s_label, subcls, spprt_oris, qry_oris = iter_loader.next()
-                except:
-                    iter_loader = iter(val_loader)
-                    qry_img, q_label, spprt_imgs, s_label, subcls, spprt_oris, qry_oris = iter_loader.next()
+            for i, batch in enumerate(pbar):
+                # try:
+                qry_img, q_label, spprt_imgs, s_label, subcls, spprt_oris, qry_oris = batch
+                # except:
+                #     continue
                 iter_num += 1
 
                 spprt_imgs = spprt_imgs.to('cuda', non_blocking=True)  # [1,1,3,473,473]

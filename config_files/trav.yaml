@@ -4,8 +4,8 @@ DATA:
   split: 0
   train_split: 0
   test_split: default
-  data_root: /home/qiyuan/2023spring/segmentation_indoor_images
-  scenes: ['elb', 'erb', 'uc', 'woh']
+  data_root: /home/edward/data/segmentation_indoor_images
+  scenes: ['elb', 'erb', 'uc', 'wh']
   num_classes_tr: 2  # Counting background for training
   num_classes_val: 2
   use_split_coco: False
