@@ -236,20 +236,20 @@ def do_epoch(
         # ====== Phase 1: Train the binary classifier on support samples ======
 
         # Keep the batch size as 1.
-        if spprt_imgs.shape[1] == 1:
-            spprt_imgs_reshape = spprt_imgs.squeeze(0).expand(
-                2, 3, args.image_size, args.image_size
-            )
-            s_label_reshape = s_label.squeeze(0).expand(
-                2, args.image_size, args.image_size
-            ).long()
-        else:
-            spprt_imgs_reshape = spprt_imgs.squeeze(0)  # [n_shots, 3, img_size, img_size]
-            s_label_reshape = s_label.squeeze(0).long() # [n_shots, img_size, img_size]
+        # if spprt_imgs.shape[1] == 1:
+        #     spprt_imgs_reshape = spprt_imgs.squeeze(0).expand(
+        #         2, 3, args.image_size, args.image_size
+        #     )
+        #     s_label_reshape = s_label.squeeze(0).expand(
+        #         2, args.image_size, args.image_size
+        #     ).long()
+        # else:
+        #     spprt_imgs_reshape = spprt_imgs.squeeze(0)  # [n_shots, 3, img_size, img_size]
+        #     s_label_reshape = s_label.squeeze(0).long() # [n_shots, img_size, img_size]
 
-        binary_cls = nn.Conv2d(
-            args.bottleneck_dim, args.num_classes_tr, kernel_size=1, bias=False
-        ).cuda()
+        # binary_cls = nn.Conv2d(
+        #     args.bottleneck_dim, args.num_classes_tr, kernel_size=1, bias=False
+        # ).cuda()
 
         optimizer = optim.SGD(model.parameters(), lr=args.cls_lr)
 

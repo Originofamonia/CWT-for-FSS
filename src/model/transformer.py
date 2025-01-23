@@ -46,7 +46,7 @@ class MultiHeadAttentionOne(nn.Module):
         nn.init.xavier_normal_(self.fc.weight)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, q, k, v, query_input=False):
+    def forward(self, q, k, v):
         k = k.view(k.size()[0], k.size()[1], -1)  # [bz, c, h, w]
         v = v.view(v.size()[0], v.size()[1], -1)  # [bz, c, h, w]
 

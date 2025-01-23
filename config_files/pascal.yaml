@@ -4,7 +4,7 @@ DATA:
   train_split: 0
   test_split: default
   train_list: lists/pascal/train.txt
-  data_root: /home/qiyuan/2023fall/PascalVOC/VOCdevkit/VOC2012/
+  data_root: /home/edward/data/VOCdevkit/VOC2012
   val_list: lists/pascal/val.txt
   num_classes_tr: 2  # Counting background for training
   num_classes_val: 5
@@ -56,12 +56,12 @@ MODEL:
   model_dir: model_ckpt
 
 EVALUATION:
-  shot: 1
+  shot: 5
   random_shot: False
   episodic: True
   norm_feat: True
   batch_size_val: 100
-  manual_seed: 2021
+  manual_seed: 8964
   ckpt_used: best
   test_num: 1000
   FB_param_noise: 0
@@ -70,6 +70,6 @@ EVALUATION:
   save_oracle: False
 
 DISTRIBUTED:
-  gpus: [1]
+  gpus: [0]
   device: 1
   distributed: False
