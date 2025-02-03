@@ -1,5 +1,6 @@
 import os
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import yaml
 import copy
@@ -322,3 +323,38 @@ def merge_cfg_from_list(cfg: CfgNode, cfg_list: List[str]):
         setattr(new_cfg, subkey, value)
 
     return new_cfg
+
+
+def mask_pooling_single_class(features, labels, target_class):
+    """
+    Perform mask pooling on feature maps using a single class from downsampled labels.
+    
+    Args:
+        features (torch.Tensor): Feature map tensor of shape (B, C, H2, W2)
+        labels (torch.Tensor): Label tensor of shape (B, H1, W1) with class indices
+        target_class (int): The specific class index to pool features for
+    
+    Returns:
+        torch.Tensor: Pooled feature tensor of shape (B, C)
+    """
+    B, C, H2, W2 = features.shape
+    B, shots, H1, W1 = labels.shape
+
+    # Step 1: Downsample labels to match feature map size
+    labels_downsampled = F.interpolate(labels.float(), size=(H2, W2), mode='nearest')
+
+    # Step 2: Create binary mask for the target class (B, 1, H2, W2)
+    class_mask = (labels_downsampled == target_class).float()
+
+    # Step 3: Flatten spatial dimensions for pooling
+    features = features.view(B, shots, C, H2 * W2)  # (B, s, C, H2*W2)
+    class_mask = class_mask.view(B, shots, H2 * W2)  # (B, s, H2*W2)
+
+    # Step 4: Normalize the mask to avoid division by zero
+    mask_sum = class_mask.sum(dim=-1, keepdim=True) + 1e-6  # Avoid division by zero
+    class_mask = class_mask / mask_sum
+
+    # Step 5: Perform weighted sum pooling
+    pooled_features = torch.einsum('bshf, bsf -> bsh', features, class_mask)
+
+    return pooled_features

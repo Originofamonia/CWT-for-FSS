@@ -23,7 +23,7 @@ from util import AverageMeter, batch_intersectionAndUnionGPU, get_model_dir, get
 from util import find_free_port, setup, cleanup, to_one_hot, intersectionAndUnionGPU
 from model.pspnet import get_model_fs
 from model.transformer import MultiHeadAttentionOne
-from util import load_cfg_from_cfg_file, merge_cfg_from_list
+from util import load_cfg_from_cfg_file, merge_cfg_from_list, mask_pooling_single_class
 
 
 def parse_args() -> None:
@@ -287,6 +287,112 @@ def validate_transformer(
     print('Average runtime / run --- {:.4f}.'.format(runtimes.mean()))
 
     return val_IoUs.mean(), val_losses.mean()
+
+
+def evaluate_cla(
+        args: argparse.Namespace,
+        val_loader: torch.utils.data.DataLoader,
+        model: nn.Module,
+        transformer: nn.Module,
+        trans_cla: nn.Module,
+        fusion: nn.Module,
+    ) -> Tuple[torch.tensor, torch.tensor]:
+
+    # To accumulate the losses and metrics over the entire validation set
+    val_Iou_meter = AverageMeter()
+
+    model.eval()
+    transformer.eval()
+    trans_cla.eval()
+    fusion.eval() 
+
+    pbar = tqdm(val_loader, desc="Validation")
+    for batch in pbar:
+        # Unpack the batch
+        qry_img, q_label, spprt_imgs, s_label, subcls, _, _ = batch
+
+        spprt_imgs = spprt_imgs.to('cuda', non_blocking=True)
+        s_label = s_label.to('cuda', non_blocking=True)
+        q_label = q_label.to('cuda', non_blocking=True)
+        qry_img = qry_img.to('cuda', non_blocking=True)
+        if spprt_imgs.shape[1] == 1:
+            spprt_imgs_reshape = spprt_imgs.squeeze(0).expand(
+                2, 3, args.image_size, args.image_size)
+        else:
+            spprt_imgs_reshape = spprt_imgs.squeeze(0)  # [n_shots, 3, img_size, img_size]
+
+        # ====== Phase 1: Process support set and query images ======
+        f_s = model.extract_features(spprt_imgs_reshape)  # [b, c, h, w]
+        f_q = model.extract_features(qry_img)  # [b, c, h, w]
+        f_q = F.normalize(f_q, dim=1)
+
+        # Weights of the classifier (pretrained on support set)
+        binary_cls = nn.Conv2d(
+            args.bottleneck_dim, args.num_classes_tr, kernel_size=1, bias=False
+        ).cuda()
+        optimizer = optim.SGD(binary_cls.parameters(), lr=args.cls_lr)
+
+        # Dynamic class weights
+        s_label_arr = s_label.cpu().numpy().copy()  # [n_task, n_shots, img_size, img_size]
+        back_pix = np.where(s_label_arr == 0)
+        target_pix = np.where(s_label_arr == 1)
+
+        criterion = nn.CrossEntropyLoss(
+            weight=torch.tensor([1.0, len(back_pix[0]) / len(target_pix[0])]).cuda(),
+            ignore_index=255
+        )
+
+        with torch.no_grad():
+            f_s = model.extract_features(spprt_imgs.squeeze(0))  # [n_task, n_shots, c, h, w]
+
+        for index in range(args.adapt_iter):
+            output_support = binary_cls(f_s)
+            output_support = F.interpolate(
+                output_support, size=s_label.size()[2:],
+                mode='bilinear', align_corners=True
+            )
+            s_loss = criterion(output_support, s_label.squeeze(0))
+            optimizer.zero_grad()
+            s_loss.backward()
+            optimizer.step()
+
+        weights_cls = binary_cls.weight.data
+        weights_cls_reshape = weights_cls.squeeze().unsqueeze(0).expand(
+            args.batch_size, 2, weights_cls.shape[1]
+        )  # [b, 2, c]
+
+        # Update classifier weights with transformer
+        updated_weights_cls = transformer(weights_cls_reshape, f_q, f_q)  # [b, 2, c]
+
+        # Process positive and negative samples from the support set
+        s_pos = mask_pooling_single_class(f_s, s_label, 1)
+        s_neg = mask_pooling_single_class(f_s, s_label, 0)
+        s_pos = F.normalize(s_pos, dim=1)
+        s_neg = F.normalize(s_neg, dim=1)
+
+        f_q_pos = trans_cla(f_q, s_pos)
+        f_q_neg = trans_cla(f_q, s_neg)
+        f_q_fused = fusion(f_q, f_q_pos, f_q_neg).view(args.batch_size, args.bottleneck_dim, -1)
+
+        # Prediction based on updated classifier weights
+        q_pred_fused = torch.matmul(updated_weights_cls, f_q_fused).view(
+            args.batch_size, 2, f_q.shape[-2], f_q.shape[-1]
+        )
+
+        q_logits = F.interpolate(
+            q_pred_fused, size=q_label.shape[1:],
+            mode='bilinear', align_corners=True
+        )
+
+        intersection, union, target = intersectionAndUnionGPU(
+            q_logits.argmax(1), q_label, args.num_classes_tr, 255
+        )
+
+        # Update mIoU meter
+        val_Iou_meter.update(intersection.sum() / (union.sum() + 1e-12), q_label.size(0))
+
+    # Return the final averaged loss and mIoU for the validation set
+    return val_Iou_meter.avg
 
 
 def validate_supervised(

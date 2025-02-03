@@ -77,3 +77,49 @@ class MultiHeadAttentionOne(nn.Module):
 
         return output
 
+
+class AttentionExtractor(nn.Module):
+    def __init__(self, n_head, d_model, d_k, d_v):
+        super().__init__()
+        self.attention = MultiHeadAttentionOne(n_head, d_model, d_k, d_v)
+
+    def forward(self, q, s):
+        """
+        q: (batch_size, hidden_dim, h, w)  --> Feature map
+        s: (5 * batch_size, hidden_dim)   --> Reference features
+        """
+        batch_size, hidden_dim, h, w = q.shape
+        batch_size, n_shots, hidden_dim = s.shape
+
+        # Flatten q to (batch_size, h*w, hidden_dim)
+        q = q.view(batch_size, hidden_dim, -1).permute(0, 2, 1)  # (batch_size, h*w, hidden_dim)
+
+        s = s.view(batch_size, hidden_dim, n_shots)  
+
+        # Compute attention
+        attended_q = self.attention(q, s, s)  # (batch_size, h*w, hidden_dim)
+
+        # Reshape output back to (batch_size, hidden_dim, h, w)
+        attended_q = attended_q.permute(0, 2, 1).view(batch_size, hidden_dim, h, w)
+
+        return attended_q
+
+
+class ConvFusion(nn.Module):
+    """
+    Combines f_q, f_q+, and f_q-
+    """
+    def __init__(self, hidden_dim):
+        super().__init__()
+        # self.conv = nn.Conv2d(3 * hidden_dim, hidden_dim, kernel_size=1)  # 1x1 conv fusion
+        self.conv = nn.Sequential(
+            nn.Conv2d(3 * hidden_dim, hidden_dim, kernel_size=1),
+            nn.GroupNorm(num_groups=8, num_channels=hidden_dim),
+            nn.ReLU(),
+            nn.Conv2d(hidden_dim, hidden_dim, kernel_size=1)
+        )
+
+    def forward(self, x1, x2, x3):
+        fused = torch.cat([x1, x2, x3], dim=1)  # [batch_size, 3 * hidden_dim, h, w]
+        fused = self.conv(fused)  # [batch_size, hidden_dim, h, w]
+        return fused
