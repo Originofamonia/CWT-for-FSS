@@ -120,10 +120,7 @@ def main_worker(args: argparse.Namespace) -> None:
 
     # ====== Metrics initialization ======
     max_val_mIoU = 0.
-    if args.debug:
-        log_iter = 5
-    else:
-        log_iter = args.iter_per_epoch if args.iter_per_epoch <= len(train_loader) else len(train_loader)
+    log_iter = args.iter_per_epoch
 
     # ====== Training  ======
     for epoch in range(args.epochs):
@@ -141,35 +138,45 @@ def main_worker(args: argparse.Namespace) -> None:
             epoch=epoch,
             log_iter=log_iter,
         )
+        if epoch % log_iter == 0:
+            val_Iou = evaluate_cla(
+                args=args,
+                val_loader=episodic_val_loader,
+                model=model,
+                transformer=transformer,
+                trans_cla=trans_cla,
+                fusion=fusion,
+            )
 
-        val_Iou = evaluate_cla(
-            args=args,
-            val_loader=episodic_val_loader,
-            model=model,
-            transformer=transformer,
-            trans_cla=trans_cla,
-            fusion=fusion,
-        )
+            if val_Iou.item() > max_val_mIoU:
+                max_val_mIoU = val_Iou.item()
 
-        if val_Iou.item() > max_val_mIoU:
-            max_val_mIoU = val_Iou.item()
+                os.makedirs(trans_save_dir, exist_ok=True)
+                filename_transformer = os.path.join(trans_save_dir, f'best.pth')
 
-            os.makedirs(trans_save_dir, exist_ok=True)
-            filename_transformer = os.path.join(trans_save_dir, f'best.pth')
+                if args.save_models:
+                    print('Saving checkpoint to: ' + filename_transformer)
 
-            if args.save_models:
-                print('Saving checkpoint to: ' + filename_transformer)
+                    torch.save(
+                        {
+                            'epoch': epoch,
+                            'state_dict': transformer.state_dict(),
+                            'optimizer': optimizer_transformer.state_dict()
+                        },
+                        filename_transformer
+                    )
 
-                torch.save(
-                    {
-                        'epoch': epoch,
-                        'state_dict': transformer.state_dict(),
-                        'optimizer': optimizer_transformer.state_dict()
-                    },
-                    filename_transformer
-                )
-
-        print(f"curr mIoU: {val_Iou.item():.3f}; Max_mIoU = {max_val_mIoU:.3f}")
+            print(f"curr mIoU: {val_Iou.item():.3f}; Max_mIoU = {max_val_mIoU:.3f}")
+        
+    val_Iou = evaluate_cla(
+        args=args,
+        val_loader=episodic_val_loader,
+        model=model,
+        transformer=transformer,
+        trans_cla=trans_cla,
+        fusion=fusion,
+    )
+    print(f"Final mIoU: {val_Iou.item():.3f}; Max_mIoU = {max_val_mIoU:.3f}")
 
     if args.save_models:
         filename_transformer = os.path.join(trans_save_dir, 'final.pth')
@@ -330,29 +337,18 @@ def do_epoch(
             dist.all_reduce(target)
 
         mIoU = (intersection / (union + 1e-10)).mean()
-        loss_meter.update(loss_total.item())  #  / dist.get_world_size()
+        loss_meter.update(loss_total.item())
 
-        if main_process(args):
-            train_losses[i] = loss_meter.avg
-            train_Ious[i] = mIoU
+        train_losses[i] = loss_meter.avg
+        train_Ious[i] = mIoU
         
         pbar.set_description(f'e: {epoch}, iter: {i}, miou: {mIoU:.3f}, loss: {loss_meter.avg:.3f}')
 
-    print('Epoch {}: The mIoU {:.2f}, loss {:.2f}'.format(
-        epoch + 1, train_Ious.mean(), train_losses.mean()
-    ))
+    print(F'Epoch {epoch}: mIoU {train_Ious.mean():.3f}, loss {train_losses.mean():.3f}')
 
     return train_Ious, train_losses
 
 
 if __name__ == "__main__":
     args = parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(str(x) for x in args.gpus)
-
-    if args.debug:
-        args.test_num = 500
-        args.epochs = 2
-        args.n_runs = 2
-        args.save_models = False
-
     main_worker(args)
