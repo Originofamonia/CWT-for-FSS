@@ -6,6 +6,7 @@
 import os
 import pickle
 import pandas as pd
+from glob import glob
 from pathlib import Path
 import numpy as np
 from scipy.interpolate import interp1d
@@ -100,6 +101,18 @@ def draw_2_by_2_images():
             plt.close(fig)
 
 
+def make_video():
+    """
+    Images are in f"output/depth/{idx}.png"
+    """
+    image_dir = "output/depth"
+    image_files = sorted(glob(f"{image_dir}/*.png"))
+
+    clip = ImageSequenceClip(image_files, fps=24)
+
+    clip.write_videofile("output/depth/output_video.mp4", codec="libx264")
+
+
 def main():
     dirs = ['elb', 'erb', 'heracleia', 'mocap', 'nh', 'uc', 'wh']
     # dirs = ['elb']
@@ -119,4 +132,5 @@ def main():
 
 if __name__ == '__main__':
     # main()
-    draw_2_by_2_images()
+    # draw_2_by_2_images()
+    make_video()
