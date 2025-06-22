@@ -109,8 +109,35 @@ def make_video():
     image_files = sorted(glob(f"{image_dir}/*.png"))
 
     clip = ImageSequenceClip(image_files, fps=24)
-
     clip.write_videofile("output/depth/output_video.mp4", codec="libx264")
+
+
+def split_labeled_and_unlabeled():
+    """
+    1. read mask folder as labeled done
+    2. '/home/edward/data/trav/all_image_depth_pair.csv' contains all pairs
+    3. all pairs - mask folder pairs = unlabeled pairs
+    """
+    img_pattern = "/home/edward/data/segmentation_indoor_images/*/*/images/*"
+    label_pattern = "/home/edward/data/segmentation_indoor_images/*/*/labels/*.npy"
+    img_files = glob(img_pattern)
+    img_stems = set([Path(p).stem for p in img_files])
+
+    label_files = glob(label_pattern)
+    label_set = set(label_files)
+    records = []
+    for img_path in img_files:
+        img = Path(img_path)
+        label_path = img.parent.parent / "labels" / (img.stem + ".npy")
+        label_path_str = str(label_path)
+
+        if label_path_str in label_set:
+            records.append({"image": img_path, "label": label_path_str})
+        else:
+            records.append({"image": img_path, "label": None})
+
+    df = pd.DataFrame(records)
+    df.to_csv("/home/edward/data/segmentation_indoor_images/labeled_pairs.csv")
 
 
 def main():
@@ -133,4 +160,5 @@ def main():
 if __name__ == '__main__':
     # main()
     # draw_2_by_2_images()
-    make_video()
+    # make_video()
+    split_labeled_and_unlabeled()
