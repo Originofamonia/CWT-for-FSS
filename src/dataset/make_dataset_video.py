@@ -34,14 +34,14 @@ def find_matching_pairs(base_dir):
     return df
 
 
-def draw_2_by_2_images():
+def draw_2_by_2_images(csv_file='/home/edward/data/trav/all_image_depth_pair.csv'):
     """
     1. read '/home/edward/data/trav/all_image_depth_pair.csv'
     2. draw a 2*2 figure: 1 img, 2 depth heatmap overlay img, 3 depth sector map
     3. save as images
     """
     # img_path, depth_path
-    df = pd.read_csv('/home/edward/data/trav/all_image_depth_pair.csv')
+    df = pd.read_csv(csv_file)
     dpi = 200
     sector_left = -45 #-135
     sector_right = 45 # 135
@@ -52,16 +52,11 @@ def draw_2_by_2_images():
     min_pct = (angle_min+45)/90  # percentile for cropping
     max_pct = (angle_max+45)/90
     for i, row in df.iterrows():
-        # img = row['img_path']
-        # depth = row['depth_path']
+        img_basename = os.path.splitext(os.path.basename(row['image']))[0]
+        laser_basename = os.path.splitext(os.path.basename(row['depth']))[0]
+        rgb_image = plt.imread(row['image'])
 
-        img_basename = os.path.splitext(os.path.basename(row['img_path']))[0]
-        laser_basename = os.path.splitext(os.path.basename(row['depth_path']))[0]
-        rgb_image = plt.imread(row['img_path'])
-        # img_width = rgb_image.shape[1]
-        # img_height = rgb_image.shape[0]
-
-        with open(row['depth_path'], 'rb') as f:
+        with open(row['depth'], 'rb') as f:
             data = pickle.load(f)
 
             vector = np.array(data['ranges'][::-1])[540:900]
@@ -97,19 +92,18 @@ def draw_2_by_2_images():
             axes[1,1].axis('off')
 
             plt.subplots_adjust(hspace=0.01, wspace=0.01)
-            plt.savefig(f"output/depth/{idx}.png",bbox_inches='tight', pad_inches=0.01, dpi=dpi)
+            plt.savefig(f"output/labeled/{idx}.png",bbox_inches='tight', pad_inches=0.01, dpi=dpi)
             plt.close(fig)
 
 
-def make_video():
+def make_video(image_dir="output/depth"):
     """
     Images are in f"output/depth/{idx}.png"
     """
-    image_dir = "output/depth"
     image_files = sorted(glob(f"{image_dir}/*.png"))
 
     clip = ImageSequenceClip(image_files, fps=24)
-    clip.write_videofile("output/depth/output_video.mp4", codec="libx264")
+    clip.write_videofile("output/labeled/output_video.mp4", codec="libx264")
 
 
 def split_labeled_and_unlabeled():
@@ -121,7 +115,6 @@ def split_labeled_and_unlabeled():
     img_pattern = "/home/edward/data/segmentation_indoor_images/*/*/images/*"
     label_pattern = "/home/edward/data/segmentation_indoor_images/*/*/labels/*.npy"
     img_files = glob(img_pattern)
-    img_stems = set([Path(p).stem for p in img_files])
 
     label_files = glob(label_pattern)
     label_set = set(label_files)
@@ -137,10 +130,33 @@ def split_labeled_and_unlabeled():
             records.append({"image": img_path, "label": None})
 
     df = pd.DataFrame(records)
-    df.to_csv("/home/edward/data/segmentation_indoor_images/labeled_pairs.csv")
+    df.to_csv("/home/edward/data/segmentation_indoor_images/labeled_pairs.csv", index=False)
 
 
-def main():
+def append_depth_to_labeled_csv():
+    """
+    append depth data to "/home/edward/data/segmentation_indoor_images/labeled_pairs.csv"
+    """
+    df_labeled = pd.read_csv("/home/edward/data/segmentation_indoor_images/labeled_pairs.csv")  # [2553,2]
+    # df_rgbd = pd.read_csv('/home/edward/data/trav/merged_rgbd.csv')  # [843,2]
+    df_all = pd.read_csv('/home/edward/data/trav/all_image_depth_pair.csv')  # [94070,2]
+    df_labeled['dir_stem'] = df_labeled['image'].apply(lambda x: f"{Path(x).parents[2].name}_{Path(x).stem}")
+    df_all['dir_stem'] = df_all['img_path'].apply(lambda x: f"{Path(x).parents[2].name}_{Path(x).stem}")
+    df_labeled = pd.merge(df_labeled, df_all[['dir_stem', 'depth_path']], on='dir_stem', how='left')
+    df_labeled.drop(columns=['dir_stem'], inplace=True)
+    df_labeled.rename(columns={'depth_path': 'depth'}, inplace=True)
+    df_labeled.to_csv("/home/edward/data/segmentation_indoor_images/labeled_rgbd_pairs.csv", index=False)
+
+
+def check_labeled_pairs():
+    df = pd.read_csv("/home/edward/data/segmentation_indoor_images/labeled_rgbd_pairs.csv")
+    df['img_stem'] = df['image'].apply(lambda x: Path(x).stem)
+    df['depth_stem'] = df['depth'].apply(lambda x: Path(x).stem)
+    intersection = set(df['img_stem']).intersection(df['depth_stem'])
+    print(intersection)  # is 0?!!
+
+
+def save_all_image_depth_pairs():
     dirs = ['elb', 'erb', 'heracleia', 'mocap', 'nh', 'uc', 'wh']
     # dirs = ['elb']
     all_dfs = []
@@ -153,12 +169,14 @@ def main():
                 all_dfs.append(df)
     
     combined_df = pd.concat(all_dfs)
-    combined_df.to_csv('/home/edward/data/trav/all_image_depth_pair.csv')
+    combined_df.to_csv('/home/edward/data/trav/all_image_depth_pair.csv', index=False)
     return combined_df
 
 
 if __name__ == '__main__':
-    # main()
-    # draw_2_by_2_images()
-    # make_video()
-    split_labeled_and_unlabeled()
+    # save_all_image_depth_pairs()
+    draw_2_by_2_images("/home/edward/data/segmentation_indoor_images/labeled_rgbd_pairs.csv")
+    make_video("output/labeled")
+    # split_labeled_and_unlabeled()
+    # append_depth_to_labeled_csv()
+    # check_labeled_pairs()
