@@ -106,7 +106,7 @@ def make_video(image_dir="output/depth"):
     clip.write_videofile("output/labeled/output_video.mp4", codec="libx264")
 
 
-def split_labeled_and_unlabeled():
+def make_labeled_dataset():
     """
     1. read mask folder as labeled done
     2. '/home/edward/data/trav/all_image_depth_pair.csv' contains all pairs
@@ -173,10 +173,19 @@ def save_all_image_depth_pairs():
     return combined_df
 
 
+def split_unlabeled_dataset():
+    labeled_df = pd.read_csv('/home/edward/data/segmentation_indoor_images/labeled_rgbd_pairs.csv')
+    labeled_df = labeled_df[labeled_df['label'].notna() & (labeled_df['label'] != '')]
+    all_df = pd.read_csv('/home/edward/data/trav/all_image_depth_pair.csv')
+    unlabeled_df = all_df[~all_df["depth_path"].isin(labeled_df["depth"])]
+    unlabeled_df.to_csv('/home/edward/data/trav/unlabeled_image_depth_pair.csv', index=False)
+
+
 if __name__ == '__main__':
     # save_all_image_depth_pairs()
-    draw_2_by_2_images("/home/edward/data/segmentation_indoor_images/labeled_rgbd_pairs.csv")
-    make_video("output/labeled")
-    # split_labeled_and_unlabeled()
+    # draw_2_by_2_images("/home/edward/data/segmentation_indoor_images/labeled_rgbd_pairs.csv")
+    # make_video("output/labeled")
+    # make_labeled_dataset()
     # append_depth_to_labeled_csv()
     # check_labeled_pairs()
+    split_unlabeled_dataset()
