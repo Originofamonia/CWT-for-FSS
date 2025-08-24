@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 from typing import Tuple, List, Any
 
 from .utils import make_dataset, make_trav_dataset
-import dataset.transform as transform
+import src.dataset.transform as transform
 from .classes import get_split_classes, filter_classes, trav_split_classes
 
 

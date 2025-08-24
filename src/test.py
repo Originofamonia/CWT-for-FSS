@@ -18,12 +18,12 @@ import torch.multiprocessing as mp
 import time
 from typing import Tuple
 
-from dataset.dataset import get_val_loader
-from util import AverageMeter, batch_intersectionAndUnionGPU, get_model_dir, get_model_dir_trans
-from util import find_free_port, setup, cleanup, to_one_hot, intersectionAndUnionGPU
-from model.pspnet import get_model_fs
-from model.transformer import MultiHeadAttentionOne
-from util import load_cfg_from_cfg_file, merge_cfg_from_list, mask_pooling_single_class
+from src.dataset.dataset import get_val_loader
+from src.util import AverageMeter, batch_intersectionAndUnionGPU, get_model_dir, get_model_dir_trans
+from src.util import find_free_port, setup, cleanup, to_one_hot, intersectionAndUnionGPU
+from src.model.pspnet import get_model_fs
+from src.model.transformer import MultiHeadAttentionOne
+from src.util import load_cfg_from_cfg_file, merge_cfg_from_list, mask_pooling_single_class
 
 
 def parse_args() -> None:

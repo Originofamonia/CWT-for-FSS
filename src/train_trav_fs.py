@@ -24,14 +24,14 @@ import argparse
 from typing import Tuple
 from tqdm import tqdm
 
-from model.pspnet import get_model_fs
-from model.transformer import MultiHeadAttentionOne
-from optimizer import get_optimizer, get_scheduler
-from dataset.dataset import trav_train_loader, trav_val_loader
-from util import intersectionAndUnionGPU, get_model_dir, AverageMeter, get_model_dir_trans
+from src.model.pspnet import get_model_fs
+from src.model.transformer import MultiHeadAttentionOne
+from src.optimizer import get_optimizer, get_scheduler
+from src.dataset.dataset import trav_train_loader, trav_val_loader
+from src.util import intersectionAndUnionGPU, get_model_dir, AverageMeter, get_model_dir_trans
 # from util import setup, cleanup, to_one_hot, batch_intersectionAndUnionGPU, find_free_port
-from test import validate_transformer
-from util import load_cfg_from_cfg_file, merge_cfg_from_list
+from src.test import validate_transformer
+from src.util import load_cfg_from_cfg_file, merge_cfg_from_list
 
 # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
@@ -105,6 +105,10 @@ def main_worker(args: argparse.Namespace) -> None:
 
     # model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
     # model = DDP(model, device_ids=[rank])
+    num_total = sum(p.numel() for p in model.parameters())
+    num_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    print(f"Total parameters: {num_total:,}; total trainable: {num_trainable}")
 
     # ====== Transformer ======
     trans_dim = args.bottleneck_dim
