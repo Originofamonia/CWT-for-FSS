@@ -272,12 +272,86 @@ def split_unlabeled_dataset():
     unlabeled_df.to_csv('/home/edward/data/trav/unlabeled_image_depth_pair.csv', index=False)
 
 
+def save_rgbd_and_masks():
+    """
+    save labeled RGB-D and masks for arch figure
+    """
+    df = pd.read_csv("/home/edward/data/segmentation_indoor_images/labeled_rgbd_pairs.csv")
+    colors = ['gray', 'lime']
+    cmap = ListedColormap(colors)
+    alpha = 0.6
+    dpi = 200
+    sector_left = -45 #-135
+    sector_right = 45 # 135
+    angle_min = -26
+    angle_max = 36
+    angle_rad_min = np.deg2rad(angle_min)
+    angle_rad_max = np.deg2rad(angle_max)
+    min_pct = (angle_min+45)/90  # percentile for cropping
+    max_pct = (angle_max+45)/90
+    
+    for i, row in tqdm(df.iterrows(), total=len(df)):
+        img_basename = os.path.splitext(os.path.basename(row['image']))[0]
+        laser_basename = os.path.splitext(os.path.basename(row['depth']))[0]
+        rgb_image = plt.imread(row['image'])
+        mask = np.load(row['label'])
+
+        with open(row['depth'], 'rb') as f:
+            data = pickle.load(f)
+
+            vector = np.array(data['ranges'][::-1])[540:900]
+            angles = np.linspace(np.deg2rad(sector_left), np.deg2rad(sector_right), len(vector), endpoint=False)
+
+        # Save RGB image
+        fig_rgb, ax_rgb = plt.subplots()
+        ax_rgb.imshow(rgb_image)
+        ax_rgb.axis('off')
+        fig_rgb.dpi = dpi
+        plt.savefig(f"output/arch/{img_basename}_rgb.png", bbox_inches='tight', pad_inches=0.01, dpi=dpi)
+        plt.close(fig_rgb)
+
+        # Create foreground and background masks
+        foreground_mask = np.where(mask == 1, mask, 0)
+        background_mask = np.where(mask == 0, 1, 0)
+
+        # Save label mask
+        fig_mask, ax_mask = plt.subplots()
+        ax_mask.imshow(mask, cmap=cmap, alpha=alpha)
+        ax_mask.axis('off')
+        fig_mask.dpi = dpi
+        plt.savefig(f"output/arch/{img_basename}_{laser_basename}_mask.png", bbox_inches='tight', pad_inches=0.01, dpi=dpi)
+        plt.close(fig_mask)
+
+        # Save background mask with 'plasma' colormap
+        fig_bg, ax_bg = plt.subplots()
+        ax_bg.imshow(background_mask, cmap='plasma', alpha=alpha)
+        ax_bg.axis('off')
+        fig_bg.dpi = dpi
+        plt.savefig(f"output/arch/{img_basename}_{laser_basename}_background.png", bbox_inches='tight', pad_inches=0.01, dpi=dpi)
+        plt.close(fig_bg)
+
+        # Save depth sector (polar plot)
+        fig_polar = plt.figure()
+        ax_polar = fig_polar.add_subplot(111, projection='polar')
+        ax_polar.plot(angles, vector)
+        ax_polar.plot([angle_rad_max, angle_rad_max], [0, 5.1], color='red', linestyle='--')
+        ax_polar.plot([angle_rad_min, angle_rad_min], [0, 5.1], color='blue', linestyle='--')
+        ax_polar.set_thetamin(sector_left)
+        ax_polar.set_thetamax(sector_right)
+        ax_polar.set_theta_zero_location('N')
+        ax_polar.set_xticks(np.pi/180. * np.linspace(sector_left, sector_right, 10, endpoint=False))
+        fig_polar.dpi = dpi
+        plt.savefig(f"output/arch/{img_basename}_{laser_basename}_depth.png", bbox_inches='tight', pad_inches=0.01, dpi=dpi)
+        plt.close(fig_polar)
+
+
 if __name__ == '__main__':
     # save_all_image_depth_pairs()
     # draw_2_by_2_images("/home/edward/data/trav/unlabeled_masks.csv")
-    make_video("output/unlabeled")
+    # make_video("output/unlabeled")
     # make_labeled_dataset()
     # append_depth_to_labeled_csv()
     # check_labeled_pairs()
     # split_unlabeled_dataset()
     # draw_2_by_2_images_parallel("/home/edward/data/trav/unlabeled_masks.csv", num_parts=8)
+    save_rgbd_and_masks()
